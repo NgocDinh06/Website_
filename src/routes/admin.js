@@ -35,7 +35,7 @@ router.post('/create-user', authenticate, authorize(['admin']), async (req, res)
 router.get('/users',authenticate, authorize(['admin']), async (req, res)=>{
     try {
         const users = await User.find().select('-password'); // Ẩn password
-        res.json(users);
+        res.json(users);// gọi lại user
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Lỗi server khi lấy danh sách người dùng'});
