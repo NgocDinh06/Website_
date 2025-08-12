@@ -103,7 +103,10 @@ app.use(helmet({
     }
   }
 })); // Bảo vệ HTTP Headers
-const allowedOrigins = ['http://localhost:5000'];
+const allowedOrigins = [
+  'http://localhost:3000',
+  'http://127.0.0.1:3000',
+  'http://localhost:5000'];
 app.use(cors({
   origin: function (origin, callback){
     if (!origin || allowedOrigins.includes(origin)){
@@ -113,6 +116,7 @@ app.use(cors({
     }
   },
   credentials: true,
+  allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 // Tạo HTTP server cho Socket.IO
 const http = require('http').createServer(app);
