@@ -4,6 +4,7 @@ const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
 const User = require('../models/User');
 const { authenticate, authorize } = require('../middleware/auth');
+const ActivityLog = require("../models/ActivityLog");
 const JWT_SECRET = process.env.JWT_SECRET;
 const REFRESH_SECRET = process.env.REFRESH_SECRET;
 
@@ -34,8 +35,19 @@ router.post('/login', async (req, res) => {
   if (!user || !(await bcrypt.compare(password, user.password))) {
     return res.status(401).json({ message: 'Sai tài khoản hoặc mật khẩu' });
   }
-
-  const accessToken = jwt.sign(
+  // kiem tra mat khau
+  const isMath = await bcrypt.compare(password, user.password);
+  if (!isMath) 
+    return res.status(401).json({ message: "Sai username hoặc password" });
+  // ghi log
+  await ActivityLog.create({
+    userId: user._id,
+    username: user.username,
+    action: "Đăng nhập",
+    role: user.role,
+    ip: req.ip
+  });
+    const accessToken = jwt.sign(
     { userId: user._id, role: user.role },
     JWT_SECRET,
     { expiresIn: '15m' }
