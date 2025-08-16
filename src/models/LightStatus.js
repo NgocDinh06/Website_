@@ -1,10 +1,11 @@
 const mongoose = require('mongoose');
 
-const lightStatusSchema = new mongoose.Schema({
-  deviceId: {type: String, required: true, index: true },
-  relay: { type: Boolean, default: false },
-  desired: { type: Boolean, default: false },// trang thai mong muon
-  lastUpdated: { type: Date, default: Date.now },
+const lightDeviceSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  location: { type: String },
+  loraNodeId: { type: String, required: true }, 
+  status: { type: String, enum: ["ON", "OFF"], default: "OFF" },
+  lastUpdated: { type: Date, default: Date.now }
 });
 
 module.exports = mongoose.model('iot_system', lightStatusSchema, 'relay_data');

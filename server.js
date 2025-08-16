@@ -175,7 +175,7 @@ app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/admin', require('./src/routes/admin'));
 app.use('/api/status', require('./src/routes/status'));
 app.use('/api/schedule', require('./src/routes/schedule'));
-
+app.use('/api/device', require('./src/routes/device'));
 // WebSocket kết nối
 io.on('connection', (socket) => {
   console.log('Client đã kết nối WebSocket');
