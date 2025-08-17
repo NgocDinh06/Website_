@@ -1,11 +1,12 @@
 const mongoose = require('mongoose');
 
-const lightDeviceSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  location: { type: String },
-  loraNodeId: { type: String, required: true }, 
-  status: { type: String, enum: ["ON", "OFF"], default: "OFF" },
+const lightStatusSchema = new mongoose.Schema({
+  deviceId: { type: String, required: true },
+  relay: { type: Boolean, default: false },   // trạng thái thực tế của relay
+  desired: { type: Boolean, default: false }, // trạng thái mong muốn (ON/OFF)
+  rssi: { type: Number },                     // tín hiệu WiFi từ ESP32
   lastUpdated: { type: Date, default: Date.now }
-});
+}, { timestamps: true });
 
-module.exports = mongoose.model('iot_system', lightStatusSchema, 'relay_data');
+// collection = relay_data
+module.exports = mongoose.model('LightStatus', lightStatusSchema, 'relay_data');

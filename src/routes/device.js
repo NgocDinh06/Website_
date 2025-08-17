@@ -1,4 +1,4 @@
-// src/routes/device.js
+// routes/device.js
 const express = require("express");
 const router = express.Router();
 const Command = require("../models/Command");
@@ -6,11 +6,11 @@ const LightStatus = require("../models/LightStatus");
 const LightDevice = require("../models/LightDevice");
 const { authenticate } = require("../middleware/auth");
 
-// =====================
-// API cho ESP32
-// =====================
+/* ============================
+   API cho ESP32
+============================ */
 
-// ESP32 lấy lệnh kế tiếp
+// ESP32 poll lệnh kế tiếp
 router.get("/:deviceId/next-command", async (req, res) => {
   const { deviceId } = req.params;
   try {
@@ -19,19 +19,18 @@ router.get("/:deviceId/next-command", async (req, res) => {
       { $set: { status: "sent", updatedAt: new Date() } },
       { sort: { createdAt: 1 }, new: true }
     );
-
     if (!cmd) return res.json({ ok: true, command: null });
     return res.json({ ok: true, command: cmd });
   } catch (err) {
-    console.error("[GET /device/:id/next-command] error:", err);
+    console.error("[GET /devices/:deviceId/next-command] error:", err);
     return res.status(500).json({ ok: false });
   }
 });
 
-// ESP32 báo cáo thực thi
+// ESP32 báo cáo thực thi lệnh
 router.post("/:deviceId/report", async (req, res) => {
   const { deviceId } = req.params;
-  const { relay, rssi, commandId, status } = req.body; // status: 'ok' | 'error'
+  const { relay, rssi, commandId, status } = req.body;
   try {
     await LightStatus.findOneAndUpdate(
       { deviceId },
@@ -42,66 +41,59 @@ router.post("/:deviceId/report", async (req, res) => {
     if (commandId) {
       await Command.findOneAndUpdate(
         { _id: commandId },
-        {
-          $set: {
-            status: status === "ok" ? "done" : "failed",
-            updatedAt: new Date(),
-          },
-        }
+        { $set: { status: status === "ok" ? "done" : "failed", updatedAt: new Date() } }
       );
     }
 
     return res.json({ ok: true });
   } catch (err) {
-    console.error("[POST /device/:id/report] error:", err);
+    console.error("[POST /devices/:deviceId/report] error:", err);
     return res.status(500).json({ ok: false });
   }
 });
 
-// =====================
-// API cho User (CRUD Device + Điều khiển)
-// =====================
+/* ============================
+   API cho User (CRUD + Control)
+============================ */
 
 // Lấy danh sách đèn kèm trạng thái
 router.get("/", authenticate, async (req, res) => {
   try {
-    const devices = await LightDevice.find({ user: req.user.userId });
+    const devices = await LightDevice.find({ user: req.user.userId, isDeleted: { $ne: true } });
 
-    // Lấy trạng thái từ LightStatus
     const statusList = await LightStatus.find({
       deviceId: { $in: devices.map((d) => d._id.toString()) },
     });
 
-    // Map lại dữ liệu
     const devicesWithStatus = devices.map((d) => {
-      const status = statusList.find((s) => s.deviceId === d._id.toString());
+      const st = statusList.find((s) => s.deviceId === d._id.toString());
       return {
         ...d.toObject(),
-        relay: status?.relay || false,
-        desired: status?.desired || false,
-        lastUpdated: status?.lastUpdated,
+        relay: st?.relay || false,
+        desired: st?.desired || false,
+        lastUpdated: st?.lastUpdated || null,
       };
     });
 
     res.json({ ok: true, devices: devicesWithStatus });
   } catch (err) {
     console.error("[GET /devices] error:", err);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, message: "Server error" });
   }
 });
 
-// Thêm đèn mới
+// Thêm đèn
 router.post("/", authenticate, async (req, res) => {
   try {
     const { name, location } = req.body;
-    const newDevice = new LightDevice({
+
+    const newDevice = await LightDevice.create({
       name,
       location,
       user: req.user.userId,
+      isDeleted: false,
     });
-    await newDevice.save();
 
-    // Tạo trạng thái mặc định trong LightStatus
     await LightStatus.create({
       deviceId: newDevice._id.toString(),
       relay: false,
@@ -111,77 +103,95 @@ router.post("/", authenticate, async (req, res) => {
     res.json({ ok: true, device: newDevice });
   } catch (err) {
     console.error("[POST /devices] error:", err);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, message: "Server error", error: err.message });
   }
 });
 
-// Điều khiển bật/tắt đèn
+// Sửa thông tin đèn
+router.put("/:id", authenticate, async (req, res) => {
+  try {
+    const { name, location } = req.body;
+    const updated = await LightDevice.findOneAndUpdate(
+      { _id: req.params.id, user: req.user.userId, isDeleted: { $ne: true } },
+      { $set: { name, location } },
+      { new: true }
+    );
+    if (!updated) return res.status(404).json({ ok: false, message: "Not found" });
+    res.json({ ok: true, device: updated });
+  } catch (err) {
+    console.error("[PUT /devices/:id] error:", err);
+    res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// Xoá đèn (chỉ đánh dấu)
+router.delete("/:id", authenticate, async (req, res) => {
+  try {
+    const deleted = await LightDevice.findOneAndUpdate(
+      { _id: req.params.id, user: req.user.userId },
+      { $set: { isDeleted: true } },
+      { new: true }
+    );
+    if (!deleted) return res.status(404).json({ ok: false, message: "Not found" });
+
+    res.json({ ok: true, message: "Marked as deleted", device: deleted });
+  } catch (err) {
+    console.error("[DELETE /devices/:id] error:", err);
+    res.status(500).json({ ok: false, message: "Server error" });
+  }
+});
+
+// Bật/Tắt
 router.post("/:id/toggle", authenticate, async (req, res) => {
   try {
-    const { action } = req.body; // "ON" | "OFF"
-    const device = await LightDevice.findOne({
-      _id: req.params.id,
-      user: req.user.userId,
-    });
+    const { action } = req.body;
+    const device = await LightDevice.findOne({ _id: req.params.id, user: req.user.userId, isDeleted: { $ne: true } });
     if (!device) return res.status(404).json({ ok: false, message: "Not found" });
 
-    // Tạo command cho ESP32
     const cmd = await Command.create({
       deviceId: device._id.toString(),
-      action,
+      command: action,
+      params: {},
+      createdBy: req.user.userId,
       status: "pending",
-      createdAt: new Date(),
     });
 
-    // Cập nhật trạng thái mong muốn
     await LightStatus.findOneAndUpdate(
       { deviceId: device._id.toString() },
       { $set: { desired: action === "ON", lastUpdated: new Date() } },
       { upsert: true }
     );
 
+    if (req.io) req.io.emit("lightDesiredChanged", { deviceId: device._id.toString(), desired: action === "ON" });
+
     res.json({ ok: true, command: cmd });
   } catch (err) {
     console.error("[POST /devices/:id/toggle] error:", err);
-    res.status(500).json({ ok: false });
+    res.status(500).json({ ok: false, message: "Server error" });
   }
 });
 
-// Cập nhật thông tin đèn
-router.put("/:id", authenticate, async (req, res) => {
+// Độ sáng
+router.post("/:id/brightness", authenticate, async (req, res) => {
   try {
-    const { name, location } = req.body;
-    const updated = await LightDevice.findOneAndUpdate(
-      { _id: req.params.id, user: req.user.userId },
-      { $set: { name, location } },
-      { new: true }
-    );
-    if (!updated)
-      return res.status(404).json({ ok: false, message: "Not found" });
-    res.json({ ok: true, device: updated });
-  } catch (err) {
-    console.error("[PUT /devices/:id] error:", err);
-    res.status(500).json({ ok: false });
-  }
-});
+    const { value } = req.body;
+    const device = await LightDevice.findOne({ _id: req.params.id, user: req.user.userId, isDeleted: { $ne: true } });
+    if (!device) return res.status(404).json({ ok: false, message: "Not found" });
 
-// Xoá đèn
-router.delete("/:id", authenticate, async (req, res) => {
-  try {
-    const deleted = await LightDevice.findOneAndDelete({
-      _id: req.params.id,
-      user: req.user.userId,
+    const cmd = await Command.create({
+      deviceId: device._id.toString(),
+      command: "BRIGHTNESS",
+      params: { value },
+      createdBy: req.user.userId,
+      status: "pending",
     });
-    if (!deleted)
-      return res.status(404).json({ ok: false, message: "Not found" });
 
-    // Xoá cả trạng thái
-    await LightStatus.deleteOne({ deviceId: deleted._id.toString() });
+    if (req.io) req.io.emit("lightBrightnessDesired", { deviceId: device._id.toString(), value });
 
-    res.json({ ok: true, message: "Deleted" });
+    res.json({ ok: true, command: cmd });
   } catch (err) {
-    console.error("[DELETE /devices/:id] error:", err);
-    res.status(500).json({ ok: false });
+    console.error("[POST /devices/:id/brightness] error:", err);
+    res.status(500).json({ ok: false, message: "Server error" });
   }
 });
 
