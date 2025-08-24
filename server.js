@@ -141,8 +141,25 @@ io.use((socket, next) => {
     return next(new Error('Authentication failed: Invalid token'));
   }
 });
+
 // Middleware
 app.use(express.json());
+app.use((req, res, next) => {
+  const oldJson = res.json;
+  res.json = function (data) {
+    try {
+      const jsonStr = JSON.stringify(data);
+      res.setHeader("Content-Type", "application/json");
+      res.setHeader("Content-Length", Buffer.byteLength(jsonStr));
+      return res.send(jsonStr);
+    } catch (err) {
+      console.error("JSON response error:", err);
+      return res.status(500).send('Internal Server Error');
+    }
+  };
+  next();
+});
+
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -230,6 +247,6 @@ setInterval(async () => {
 
 // Start server
 const PORT = process.env.PORT || 5000;
-http.listen(PORT, () => {
-  console.log(`Server đang chạy tại http://localhost:${PORT}`);
+http.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server đang chạy tại http://0.0.0.0:${PORT}`);
 });

@@ -1,3 +1,5 @@
+// ghi lai hanh dong cua thiet bi
+
 const mongoose = require("mongoose");
 
 const deviceLogSchema = new mongoose.Schema({
