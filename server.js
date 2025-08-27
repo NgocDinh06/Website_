@@ -246,7 +246,7 @@ setInterval(async () => {
 }, 10000);
 
 // Start server
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.PORT || 5001;
 http.listen(PORT, "0.0.0.0", () => {
   console.log(`Server đang chạy tại http://0.0.0.0:${PORT}`);
 });
