@@ -1,7 +1,11 @@
 const mongoose = require("mongoose");
 
 const LightDeviceSchema = new mongoose.Schema({
-  deviceId: { type: String, required: true, unique: true }, // MAC address chính là deviceId
+  deviceId: { type: String, required: true, unique: true },
+  gps: {
+    lat: { type: Number, default: null },
+    lon: { type: Number, default: null }
+  }, // MAC address chính là deviceId
   name: { type: String, required: true },
   location: { type: String, default: "" },
   user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: false },

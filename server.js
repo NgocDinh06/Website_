@@ -192,7 +192,7 @@ app.use('/api/auth', require('./src/routes/auth'));
 app.use('/api/admin', require('./src/routes/admin'));
 app.use('/api/status', require('./src/routes/status'));
 app.use('/api/schedule', require('./src/routes/schedule'));
-app.use('/api/devices', require('./src/routes/device'));
+app.use('/api/devices', require('./src/rout es/device'));
 // WebSocket kết nối
 io.on('connection', (socket) => {
   console.log('Client đã kết nối WebSocket');
@@ -246,7 +246,7 @@ setInterval(async () => {
 }, 10000);
 
 // Start server
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 5000;
 http.listen(PORT, "0.0.0.0", () => {
   console.log(`Server đang chạy tại http://0.0.0.0:${PORT}`);
 });

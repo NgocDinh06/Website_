@@ -311,37 +311,46 @@ const { authenticate } = require("../middleware/auth");
 
 router.post("/register", async (req, res) => {
   try {
-    const { mac } = req.body;
+    const { mac, lat, lon } = req.body;
     if (!mac || !/^[0-9A-Fa-f]{2}(:[0-9A-Fa-f]{2}){5}$/.test(mac)) {
       return res.status(400).json({ ok: false, message: "Invalid MAC address" });
     }
     const normalizedMac = mac.toUpperCase();
+
     let device = await LightDevice.findOne({ deviceId: normalizedMac });
     if (!device) {
       device = await LightDevice.create({
         deviceId: normalizedMac,
         name: `Device-${normalizedMac}`,
+        gps: { lat: lat || null, lon: lon || null },
         location: "",
         user: null,
         isDeleted: false,
       });
+
       await LightStatus.create({
         deviceId: device.deviceId,
         relay: false,
         desired: false,
-        brightness: 50, // Thêm brightness
+        brightness: 50,
       });
+    } else {
+      // cập nhật GPS mỗi lần đăng ký lại
+      if (lat && lon) {
+        device.gps = { lat, lon };
+        await device.save();
+      }
     }
+
     const response = { ok: true, deviceId: device.deviceId, isAssigned: device.user !== null };
     res.status(200).json(response);
-    res.end();
     console.log(`[POST /devices/register] Sent response: ${JSON.stringify(response)}`);
   } catch (err) {
     console.error("[POST /devices/register] error:", err.message);
     res.status(500).json({ ok: false, message: "Server error" });
-    res.end();
   }
 });
+
 
 router.get("/pending", authenticate, async (req, res) => {
   try {
@@ -385,6 +394,32 @@ router.post("/", authenticate, async (req, res) => {
     console.error("[POST /devices] error:", err.message);
     res.status(500).json({ ok: false, message: "Lỗi khi thêm thiết bị" });
     res.end();
+  }
+});
+router.delete("/:id", authenticate, async (req, res) => {
+  try {
+    const device = await LightDevice.findOne({ _id: req.params.id, user: req.user.userId });
+    if (!device) {
+      return res.status(404).json({ ok: false, message: "Device not found" });
+    }
+
+    // Xóa dữ liệu liên quan
+    await LightStatus.deleteOne({ deviceId: device.deviceId });
+    await Command.deleteMany({ deviceId: device.deviceId });
+
+    // Xóa thiết bị
+    await LightDevice.deleteOne({ _id: req.params.id });
+
+    // Thông báo qua WebSocket
+    if (req.io) {
+      req.io.emit("device_deleted", { deviceId: device.deviceId });
+      console.log(`[DELETE /devices/:id] Emitted device_deleted for ${device.deviceId}`);
+    }
+
+    res.json({ ok: true, message: "Device deleted permanently" });
+  } catch (err) {
+    console.error("[DELETE /devices/:id] error:", err.message);
+    res.status(500).json({ ok: false, message: "Lỗi khi xóa thiết bị" });
   }
 });
 
@@ -453,44 +488,76 @@ router.post("/:id/toggle", authenticate, async (req, res) => {
 
 router.get("/:deviceId/next-command", async (req, res) => {
   try {
+    const { deviceId } = req.params;
+    // Kiểm tra thiết bị có tồn tại không
+    const device = await LightDevice.findOne({ deviceId, isDeleted: { $ne: true } });
+    if (!device) {
+      console.log(`[GET /devices/:deviceId/next-command] Device ${deviceId} not found`);
+      return res.status(404).json({ ok: false, message: "Device not found" });
+    }
+
     const cmd = await Command.findOneAndUpdate(
-      { deviceId: req.params.deviceId, status: "pending" },
+      { deviceId, status: "pending" },
       { $set: { status: "sent", updatedAt: new Date() } },
       { sort: { createdAt: 1 }, new: true }
     );
+
     const response = { ok: true, command: cmd || null };
     res.json(response);
-    res.end();
     console.log(`[GET /devices/:deviceId/next-command] Sent response: ${JSON.stringify(response)}`);
   } catch (err) {
     console.error("[GET /devices/:deviceId/next-command] error:", err.message);
-    res.status(500).json({ ok: false, message: "Lỗi khi lấy lệnh" });
-    res.end();
+    res.status(500).json({ ok: false, message: "Server error" });
   }
 });
-
 router.post("/report", async (req, res) => {
   try {
-    const { mac, cmd, commandId } = req.body;
+    const { mac, cmd, commandId, lat, lon } = req.body;
     const deviceId = mac.toUpperCase();
+
     await LightStatus.findOneAndUpdate(
       { deviceId },
       { $set: { relay: cmd === 1, lastUpdated: new Date() } },
       { upsert: true }
     );
+
+    if (lat && lon) {
+      await LightDevice.findOneAndUpdate(
+        { deviceId },
+        { $set: { "gps.lat": lat, "gps.lon": lon } }
+      );
+    }
+
     if (commandId) {
       await Command.findOneAndUpdate(
         { _id: commandId },
         { $set: { status: "done", updatedAt: new Date() } }
       );
     }
+
     res.json({ ok: true });
-    res.end();
     console.log(`[POST /devices/report] Processed report for ${deviceId}`);
   } catch (err) {
     console.error("[POST /devices/report] error:", err.message);
     res.status(500).json({ ok: false, message: "Lỗi khi xử lý báo cáo" });
-    res.end();
+  }
+});
+
+router.get("/all", async (req, res) => {
+  try {
+    const devices = await LightDevice.find({ isDeleted: { $ne: true } });
+    const response = {
+      ok: true,
+      devices: devices.map((d) => ({
+        deviceId: d.deviceId,
+        isAssigned: d.user !== null,
+      })),
+    };
+    res.json(response);
+    console.log(`[GET /devices/all] Sent response: ${JSON.stringify(response)}`);
+  } catch (err) {
+    console.error("[GET /devices/all] error:", err.message);
+    res.status(500).json({ ok: false, message: "Lỗi khi lấy danh sách thiết bị" });
   }
 });
 
